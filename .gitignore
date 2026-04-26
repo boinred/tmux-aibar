@@ -1,0 +1,12 @@
+# 런타임 캐시 (사용량 텍스트, 로그) — 커밋하지 않음.
+cache/*
+!cache/.gitkeep
+
+# macOS
+.DS_Store
+
+# 외부 도구 (bkit) 가 만든 로컬 메타데이터 — 공개 안 함.
+.bkit/
+
+# 다른 세션 인계용 로컬 메모 — 공개 안 함.
+HANDOFF.md
