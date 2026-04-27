@@ -1,5 +1,9 @@
 # tmux-aibar
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![tpm](https://img.shields.io/badge/tpm-compatible-green)](https://github.com/tmux-plugins/tpm)
+[![macOS](https://img.shields.io/badge/macOS-14%2B-lightgrey)](https://www.apple.com/macos)
+
 > Show **Claude Code** / **Codex** CLI usage in your tmux status bar — auto-detects which AI is running in the active pane.
 
 `tmux-aibar` watches the foreground process tree of your active pane and renders a Catppuccin-style pill with **tokens, cost, and daily quota** for whichever AI CLI you're currently using.
