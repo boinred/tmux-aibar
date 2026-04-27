@@ -9,7 +9,8 @@
 `tmux-aibar` watches the foreground process tree of your active pane and renders a Catppuccin-style pill with **tokens, cost, and daily quota** for whichever AI CLI you're currently using.
 
 ```
-... 13.0% | 75.0% | 🤖 Claude $0.42 (8k) | 🔋 85% | 04/26 12:45
+... 13.0% | 75.0% | 🤖 Claude 12%        | 🔋 85% | 04/26 12:45    ← plan 인식됨
+... 13.0% | 75.0% | 🤖 Claude $0.42 (8k) | 🔋 85% | 04/26 12:45    ← plan 미설정
 ... 13.0% | 75.0% | 🦊 Codex 142k today  | 🔋 85% | 04/26 12:45
 ... 13.0% | 75.0% |                      | 🔋 85% | 04/26 12:45    ← 둘 다 안 떠 있을 때
 ```
@@ -17,7 +18,7 @@
 ## Features
 
 - 🔍 **Auto-detect** — no wrappers, no env vars; reads the active pane's process tree
-- 🤖 **Claude Code** support via [`ccusage`](https://github.com/ryoppippi/ccusage) (local transcript parsing, no network)
+- 🤖 **Claude Code** support via [`ccusage`](https://github.com/ryoppippi/ccusage) — shows the **active 5-hour block's API-equivalent cost as a % of your plan price** (`pro $20`, `max5 $100`, `max20 $200`). Plan is auto-detected from Claude Code's keychain credentials; falls back to `$cost (Nk)` if plan is unknown.
 - 🦊 **Codex** support via OpenAI Admin Usage API (cached every 60s, no rate-limit risk)
 - 🔐 **macOS Keychain** integration — keep your `sk-admin-*` key out of plaintext
 - 🎨 **Catppuccin-friendly pill** — colors fully overridable via tmux options
@@ -38,16 +39,28 @@ set -ag status-right "#{aibar_status}"
 
 `prefix + I` (tpm install) → reload tmux config.
 
-### 2) Claude usage — `ccusage` 설치 (선택)
+### 2) Claude usage — `ccusage` 설치 + plan 자동 감지
 
 Claude Code 사용량을 표시하려면:
 
 ```bash
+# (a) ccusage 설치
 bun  i -g ccusage    # 또는
 npm  i -g ccusage
+
+# (b) plan 자동 감지 — 한 번만 실행 (Keychain 에서 추출 → cache/claude-plan.txt)
+~/.tmux/plugins/tmux-aibar/scripts/detect-claude-plan.sh
 ```
 
-설치 안 하면 `🤖 Claude (install ccusage)`로 표시됩니다.
+ccusage 가 없으면 `🤖 Claude (install ccusage)` 로 표시됩니다.
+plan 감지 실패 또는 Linux 사용자는 manual 설정도 가능:
+
+```tmux
+set -g @aibar_claude_plan "max20"   # 또는 "max5" / "pro"
+```
+
+> **plan 정보는 어디서 올까?**
+> Claude Code 의 OAuth 자격증명 (`security find-generic-password -s 'Claude Code-credentials'`) 안의 `rateLimitTier` 필드를 1회 읽어 캐시합니다. 자격증명 token 자체는 절대 출력/저장하지 않습니다.
 
 ### 3) Codex usage — Admin Key + LaunchAgent (선택)
 
@@ -78,7 +91,8 @@ security add-generic-password -U -a "$USER" -s openai-admin-key -w
 | `@aibar_codex_fg`       | `#fab387`  | Codex 글자색 (catppuccin peach) |
 | `@aibar_claude_label`   | `🤖 Claude`| Claude 라벨 |
 | `@aibar_codex_label`    | `🦊 Codex` | Codex 라벨 |
-| `@aibar_cache_dir`      | 플러그인 폴더의 `cache/` | Codex 캐시 위치 |
+| `@aibar_claude_plan`    | (auto)     | `pro` / `max5` / `max20`. 비워두면 `cache/claude-plan.txt` 자동 사용. 둘 다 없으면 `$cost (Nk)` fallback. |
+| `@aibar_cache_dir`      | 플러그인 폴더의 `cache/` | 캐시 위치 |
 
 예 (Dracula 테마 색):
 
@@ -153,6 +167,7 @@ tmux-aibar/
 │   ├── ai-usage.sh                     # 메인 모듈 (status-right 에 호출됨)
 │   ├── helpers.sh                      # tmux 옵션 읽기 유틸
 │   ├── refresh-codex-usage.sh          # OpenAI API → 캐시 갱신
+│   ├── detect-claude-plan.sh           # Claude plan auto-detect (Keychain → cache)
 │   └── install-launchagent.sh          # LaunchAgent 자동 설치
 ├── launchagents/
 │   └── codex-usage.plist.template      # macOS LaunchAgent 템플릿

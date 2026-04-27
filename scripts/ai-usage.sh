@@ -22,6 +22,19 @@ CACHE_DIR=$(tmux_get "@aibar_cache_dir"  "$(aibar_root)/cache")
 CLAUDE_LABEL=$(tmux_get "@aibar_claude_label" "🤖 Claude")
 CODEX_LABEL=$(tmux_get  "@aibar_codex_label"  "🦊 Codex")
 
+# Claude plan: tmux option > cache 파일 > (없음)
+# cache 파일은 detect-claude-plan.sh 가 1회 실행으로 생성.
+CLAUDE_PLAN=$(tmux_get "@aibar_claude_plan" "")
+if [[ -z "$CLAUDE_PLAN" && -r "$CACHE_DIR/claude-plan.txt" ]]; then
+  CLAUDE_PLAN=$(<"$CACHE_DIR/claude-plan.txt")
+fi
+case "$CLAUDE_PLAN" in
+  pro)   CLAUDE_BUDGET=20  ;;
+  max5)  CLAUDE_BUDGET=100 ;;
+  max20) CLAUDE_BUDGET=200 ;;
+  *)     CLAUDE_BUDGET=    ;;
+esac
+
 # ---- detect AI process in active pane ----
 pane_pid=$(tmux display-message -p '#{pane_pid}' 2>/dev/null || true)
 [[ -z "${pane_pid:-}" ]] && exit 0
@@ -53,7 +66,13 @@ if echo "$cmds" | grep -Eqi '(/|^)claude([[:space:]]|$)|claude/cli|claude-code';
     json=$($runner blocks --active --json 2>/dev/null || echo '{}')
     cost=$(echo "$json" | jq -r '.blocks[0].costUSD // 0' 2>/dev/null || echo 0)
     tok=$(echo  "$json" | jq -r '.blocks[0].tokenCounts.totalTokens // 0' 2>/dev/null || echo 0)
-    text=$(printf '%s $%.2f (%dk)' "$CLAUDE_LABEL" "$cost" "$((tok/1000))")
+    if [[ -n "$CLAUDE_BUDGET" ]]; then
+      # 5시간 active block 의 API-환산 cost 가 plan 가격의 몇 % 인지.
+      pct=$(awk -v c="$cost" -v b="$CLAUDE_BUDGET" 'BEGIN{printf "%.0f", (c/b)*100}')
+      text=$(printf '%s %d%%' "$CLAUDE_LABEL" "$pct")
+    else
+      text=$(printf '%s $%.2f (%dk)' "$CLAUDE_LABEL" "$cost" "$((tok/1000))")
+    fi
   else
     text="$CLAUDE_LABEL (install ccusage)"
   fi
