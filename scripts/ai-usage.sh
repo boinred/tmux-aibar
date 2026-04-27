@@ -82,11 +82,27 @@ fi
 
 # ---- Codex ----
 if echo "$cmds" | grep -Eqi '(/|^)codex([[:space:]]|$)|/codex/'; then
-  cache="$CACHE_DIR/codex-usage.txt"
-  if [[ -r "$cache" ]]; then
-    text="$CODEX_LABEL $(cat "$cache")"
+  # ChatGPT 모드는 Platform Usage API 와 별개라 토큰 수를 못 가져옴 — 라벨만 표시.
+  auth_mode=""
+  if [[ -r "$HOME/.codex/auth.json" ]]; then
+    auth_mode=$(jq -r '.auth_mode // empty' "$HOME/.codex/auth.json" 2>/dev/null || true)
+  fi
+
+  if [[ "$auth_mode" == "chatgpt" ]]; then
+    text="$CODEX_LABEL"
   else
-    text="$CODEX_LABEL (no cache — see README)"
+    cache="$CACHE_DIR/codex-usage.txt"
+    if [[ ! -r "$cache" ]]; then
+      text="$CODEX_LABEL (setup)"
+    else
+      content=$(<"$cache")
+      case "$content" in
+        '(no key)')      text="$CODEX_LABEL (setup)" ;;
+        '(invalid key)') text="$CODEX_LABEL (key invalid)" ;;
+        '(api error)')   text="$CODEX_LABEL (api error)" ;;
+        *)               text="$CODEX_LABEL $content" ;;
+      esac
+    fi
   fi
   pill "$CODEX_FG" "$text"
   exit 0

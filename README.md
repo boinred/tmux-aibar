@@ -9,9 +9,10 @@
 `tmux-aibar` watches the foreground process tree of your active pane and renders a Catppuccin-style pill with **tokens, cost, and daily quota** for whichever AI CLI you're currently using.
 
 ```
-... 13.0% | 75.0% | 🤖 Claude 12%        | 🔋 85% | 04/26 12:45    ← plan 인식됨
-... 13.0% | 75.0% | 🤖 Claude $0.42 (8k) | 🔋 85% | 04/26 12:45    ← plan 미설정
-... 13.0% | 75.0% | 🦊 Codex 142k today  | 🔋 85% | 04/26 12:45
+... 13.0% | 75.0% | 🤖 Claude 12%        | 🔋 85% | 04/26 12:45    ← Claude, plan 인식됨
+... 13.0% | 75.0% | 🤖 Claude $0.42 (8k) | 🔋 85% | 04/26 12:45    ← Claude, plan 미설정
+... 13.0% | 75.0% | 🦊 Codex 142k today  | 🔋 85% | 04/26 12:45    ← Codex, apikey 모드
+... 13.0% | 75.0% | 🦊 Codex             | 🔋 85% | 04/26 12:45    ← Codex, ChatGPT 모드 (숫자 N/A)
 ... 13.0% | 75.0% |                      | 🔋 85% | 04/26 12:45    ← 둘 다 안 떠 있을 때
 ```
 
@@ -19,7 +20,9 @@
 
 - 🔍 **Auto-detect** — no wrappers, no env vars; reads the active pane's process tree
 - 🤖 **Claude Code** support via [`ccusage`](https://github.com/ryoppippi/ccusage) — shows the **active 5-hour block's API-equivalent cost as a % of your plan price** (`pro $20`, `max5 $100`, `max20 $200`). Plan is auto-detected from Claude Code's keychain credentials; falls back to `$cost (Nk)` if plan is unknown.
-- 🦊 **Codex** support via OpenAI Admin Usage API (cached every 60s, no rate-limit risk)
+- 🦊 **Codex** support — auto-detects `auth_mode` from `~/.codex/auth.json`:
+  - `apikey` 모드 (OpenAI Platform 결제) → 일일 토큰 수 표시 (Admin Usage API, 60s 캐시)
+  - `chatgpt` 모드 (ChatGPT Plus/Pro 등 구독 결제) → ChatGPT/Platform 결제가 분리되어 있어 사용량은 표시 불가, 라벨만 보입니다
 - 🔐 **macOS Keychain** integration — keep your `sk-admin-*` key out of plaintext
 - 🎨 **Catppuccin-friendly pill** — colors fully overridable via tmux options
 
@@ -62,18 +65,21 @@ set -g @aibar_claude_plan "max20"   # 또는 "max5" / "pro"
 > **plan 정보는 어디서 올까?**
 > Claude Code 의 OAuth 자격증명 (`security find-generic-password -s 'Claude Code-credentials'`) 안의 `rateLimitTier` 필드를 1회 읽어 캐시합니다. 자격증명 token 자체는 절대 출력/저장하지 않습니다.
 
-### 3) Codex usage — Admin Key + LaunchAgent (선택)
-
-Codex 사용량을 표시하려면 **OpenAI Organization Admin Key**(read-only `api.usage.read` scope만 필요)가 필요합니다.
+### 3) Codex usage — `setup-codex.sh` 한 번 실행 (선택)
 
 ```bash
-# (a) Keychain 에 키 저장 — 평문 export 불필요
-security add-generic-password -U -a "$USER" -s openai-admin-key -w
-# 프롬프트에 sk-admin-... 키 입력
-
-# (b) 1 분마다 자동 갱신하는 LaunchAgent 설치
-~/.tmux/plugins/tmux-aibar/scripts/install-launchagent.sh
+~/.tmux/plugins/tmux-aibar/scripts/setup-codex.sh
 ```
+
+이 wizard 가 본인 환경을 감지해서 알아서 분기합니다:
+
+| `~/.codex/auth.json` 의 `auth_mode` | wizard 동작 | pill 표시 |
+|---|---|---|
+| `chatgpt` (ChatGPT Plus/Pro/Business 구독) | "사용량 조회 불가" 안내, LaunchAgent 등록 안 함 (default) | `🦊 Codex` (라벨만) |
+| `apikey` (Platform `sk-…` key 인증) | 기존 Admin key 검증 → invalid 면 새 key 입력 → Keychain 저장 → LaunchAgent 등록 | `🦊 Codex 142k today` |
+| (Codex 미설치) | 메시지 후 종료 | (안 그려짐) |
+
+검증/저장 외에 Admin key 본문은 어디에도 echo 되지 않습니다 (`read -rs` 로 입력).
 
 > **왜 cron 이 아니라 launchd?**
 > macOS 의 cron 은 GUI 세션과 분리되어 Keychain 접근이 차단됩니다. LaunchAgent 는 사용자 세션 안에서 실행되어 자연스럽게 Keychain 을 풀 수 있습니다.
@@ -125,13 +131,20 @@ set -g @aibar_codex_fg  "#ffb86c"
 
 ## Troubleshooting
 
-### `(no key)` 가 계속 표시됨
+### Codex pill 의 sentinel 별 의미
 
-LaunchAgent 가 Keychain 접근에 실패한 경우입니다:
+| pill | 원인 | 해결 |
+|---|---|---|
+| `🦊 Codex` (숫자 없음) | `auth.json` 이 `chatgpt` 모드 | 정상 — ChatGPT/Platform 결제 분리 한계. Platform 사용량을 보려면 Admin key 환경 별도 구성. |
+| `🦊 Codex (setup)` | Keychain 에 admin key 가 없음 | `setup-codex.sh` 실행 |
+| `🦊 Codex (key invalid)` | Admin key 가 OpenAI 측에서 거부 (revoked/expired) | `setup-codex.sh` 재실행 → 새 key 입력 |
+| `🦊 Codex (api error)` | invalid_api_key 외 다른 API 에러 (네트워크/스코프 등) | `cat ~/.tmux/plugins/tmux-aibar/cache/codex-usage.log` 로 raw 응답 확인 |
+| `🦊 Codex 0k today` (실제로는 사용 중인데) | 집계 지연 (~30분), 또는 키가 다른 organization | 30분 후 재확인 / `setup-codex.sh` 로 검증 |
 
+LaunchAgent 직접 진단:
 ```bash
-cat ~/.tmux/plugins/tmux-aibar/cache/codex-usage.err
 launchctl print gui/$(id -u)/com.tmux-aibar.codex-usage | head -20
+launchctl kickstart -k gui/$(id -u)/com.tmux-aibar.codex-usage   # 즉시 실행
 ```
 
 처음 실행 시 macOS 가 "tmux-aibar 가 keychain item 에 접근하려 합니다" prompt 를 띄울 수 있습니다 → **항상 허용** 클릭.
@@ -168,6 +181,7 @@ tmux-aibar/
 │   ├── helpers.sh                      # tmux 옵션 읽기 유틸
 │   ├── refresh-codex-usage.sh          # OpenAI API → 캐시 갱신
 │   ├── detect-claude-plan.sh           # Claude plan auto-detect (Keychain → cache)
+│   ├── setup-codex.sh                  # Codex onboarding wizard (auth_mode 감지 + key 검증)
 │   └── install-launchagent.sh          # LaunchAgent 자동 설치
 ├── launchagents/
 │   └── codex-usage.plist.template      # macOS LaunchAgent 템플릿

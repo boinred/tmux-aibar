@@ -50,6 +50,15 @@ resp=$(curl -s --max-time 5 \
   -H "Authorization: Bearer ${OPENAI_ADMIN_KEY}" \
   -H "Content-Type: application/json" 2>/dev/null || echo '{}')
 
+# 4) 에러 분기 — silent 0 fallback 대신 캐시에 명확한 sentinel 기록.
+if echo "$resp" | jq -e '.error.code == "invalid_api_key"' >/dev/null 2>&1; then
+  echo "(invalid key)" > "$CACHE"
+  exit 0
+elif echo "$resp" | jq -e 'has("error")' >/dev/null 2>&1; then
+  echo "(api error)" > "$CACHE"
+  exit 0
+fi
+
 tok=$(echo "$resp" | jq -r '
   [.data[]?.results[]? | (.input_tokens // 0) + (.output_tokens // 0)]
   | add // 0
